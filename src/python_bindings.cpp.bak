@@ -1,27 +1,18 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include "vector_cluster_store.h"
+#include "logger.h"
 #include <iostream>
-#include <string>
-#include <vector>
-#include <cstdint>
-
-// Include your headers with proper relative paths
-#include "./clustering_interface.h"
-#include "./kmeans_clustering.h"
-#include "./vector_cluster_store.h"
-#include "./logger.h"
-#include "linux_check.h"
 
 namespace py = pybind11;
 
-// Define the module name correctly - must match what's in setup.py
-PYBIND11_MODULE(_vector_store, m) {
+PYBIND11_MODULE(vector_cluster_store_py, m) {
     m.doc() = "Vector cluster storage for embeddings on raw devices";
     
     py::class_<Logger>(m, "Logger")
         .def(py::init<const std::string&>());
     
-    py::class_<VectorClusterStore>(m, "VectorStore")
+    py::class_<VectorClusterStore>(m, "VectorClusterStore")
         .def(py::init<Logger&>())
         .def("initialize", &VectorClusterStore::initialize)
         .def("store_vector", [](VectorClusterStore& self, uint32_t id, const std::vector<float>& vec, const std::string& metadata = "") {
