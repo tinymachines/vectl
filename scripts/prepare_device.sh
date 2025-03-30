@@ -1,23 +1,45 @@
 #!/bin/bash
 
 # Device preparation script
-# Usage: ./prepare_device.sh /dev/sdX
+# Usage: sudo ./prepare_device.sh /dev/sdX
 
 set -e  # Exit on error
 
+# Check if running with sudo
+if [ "$EUID" -ne 0 ]; then
+    echo "Error: This script must be run with sudo."
+    echo "Usage: sudo $0 /dev/sdX"
+    exit 1
+fi
+
 if [ "$#" -ne 1 ]; then
-    echo "Usage: $0 /dev/sdX"
+    echo "Usage: sudo $0 /dev/sdX"
     exit 1
 fi
 
 DEVICE="$1"
-./reset_device.sh "${DEVICE}"
 echo "===== Device Preparation Script ====="
 echo "Target device: $DEVICE"
 
 # Check if device exists
 if [ ! -b "$DEVICE" ]; then
     echo "Error: Device $DEVICE does not exist or is not a block device."
+    exit 1
+fi
+
+# Check if device is system disk
+ROOT_DEVICE=$(df / | tail -1 | awk '{print $1}' | sed 's/[0-9]*$//')
+if [[ "$DEVICE" == "$ROOT_DEVICE" ]]; then
+    echo "Error: $DEVICE appears to be your system disk!"
+    echo "Refusing to proceed to prevent system damage."
+    exit 1
+fi
+
+# Confirmation
+echo "⚠️  WARNING: All data on $DEVICE will be permanently erased!"
+read -p "Are you absolutely sure you want to continue? (yes/no): " CONFIRM
+if [[ "$CONFIRM" != "yes" ]]; then
+    echo "Operation cancelled."
     exit 1
 fi
 

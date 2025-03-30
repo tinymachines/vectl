@@ -113,32 +113,67 @@ bool VectorClusterStore::openDevice(bool readOnly) {
     
     int flags = readOnly ? O_RDONLY : O_RDWR;
     
-    logger_.debug("Opening device: " + device_path_);
-    fd_ = open(device_path_.c_str(), flags);
+    // Add O_CREAT flag if this might be a new file
+    if (!readOnly && device_path_[0] != '/') {
+        flags |= O_CREAT;
+    }
+    
+    logger_.debug("Opening device/file: " + device_path_);
+    fd_ = open(device_path_.c_str(), flags, 0644);  // Add permissions for creation
     
     if (fd_ < 0) {
-        logger_.error("Failed to open device: " + device_path_ + ", error: " + strerror(errno));
+        logger_.error("Failed to open device/file: " + device_path_ + ", error: " + strerror(errno));
         return false;
     }
     
-    // Get device size
-    if (ioctl(fd_, BLKGETSIZE64, &device_size_) < 0) {
-        logger_.error("Failed to get device size: " + std::string(strerror(errno)));
+    // Check if it's a block device or regular file
+    struct stat st;
+    if (fstat(fd_, &st) < 0) {
+        logger_.error("Failed to stat file: " + std::string(strerror(errno)));
         closeDevice();
         return false;
     }
     
-    // Get block size
-    if (ioctl(fd_, BLKSSZGET, &block_size_) < 0) {
-        logger_.error("Failed to get block size: " + std::string(strerror(errno)));
-        closeDevice();
-        return false;
+    bool is_block_device = S_ISBLK(st.st_mode);
+    logger_.debug(device_path_ + " is a " + (is_block_device ? "block device" : "regular file"));
+    
+    if (is_block_device) {
+        // For block devices, use ioctl to get size and block size
+        if (ioctl(fd_, BLKGETSIZE64, &device_size_) < 0) {
+            logger_.error("Failed to get device size: " + std::string(strerror(errno)));
+            closeDevice();
+            return false;
+        }
+        
+        if (ioctl(fd_, BLKSSZGET, &block_size_) < 0) {
+            logger_.error("Failed to get block size: " + std::string(strerror(errno)));
+            closeDevice();
+            return false;
+        }
+    } else {
+        // For regular files, use fstat for size and use default block size
+        device_size_ = st.st_size;
+        block_size_ = 512;  // Default block size for files
+        
+        // If file is empty or new, set a minimum size
+        if (device_size_ == 0 && !readOnly) {
+            // Initialize with 100MB for new files
+            const off_t min_size = 100 * 1024 * 1024;
+            logger_.info("Initializing new file with size " + std::to_string(min_size) + " bytes");
+            
+            if (ftruncate(fd_, min_size) < 0) {
+                logger_.error("Failed to initialize file size: " + std::string(strerror(errno)));
+                closeDevice();
+                return false;
+            }
+            device_size_ = min_size;
+        }
     }
     
     is_direct_io_ = false;
     
-    logger_.info("Device opened successfully");
-    logger_.info("Device size: " + std::to_string(device_size_) + " bytes");
+    logger_.info("Device/file opened successfully");
+    logger_.info("Size: " + std::to_string(device_size_) + " bytes");
     logger_.info("Block size: " + std::to_string(block_size_) + " bytes");
     
     return true;
@@ -157,33 +192,65 @@ bool VectorClusterStore::openDeviceWithDirectIO(bool readOnly) {
     int flags = readOnly ? O_RDONLY : O_RDWR;
     flags |= O_DIRECT;
     
-    logger_.debug("Opening device with O_DIRECT: " + device_path_);
+    logger_.debug("Opening device/file with O_DIRECT: " + device_path_);
     fd_ = open(device_path_.c_str(), flags);
     
     if (fd_ < 0) {
-        logger_.error("Failed to open device with O_DIRECT: " + device_path_ + 
-                    ", error: " + strerror(errno));
-        return false;
+        logger_.error("Failed to open with O_DIRECT: " + device_path_ + 
+                    ", error: " + strerror(errno) + 
+                    ". Falling back to standard I/O.");
+        
+        // Fall back to standard I/O
+        return openDevice(readOnly);
     }
     
-    // Get device size
-    if (ioctl(fd_, BLKGETSIZE64, &device_size_) < 0) {
-        logger_.error("Failed to get device size: " + std::string(strerror(errno)));
+    // Check if it's a block device or regular file
+    struct stat st;
+    if (fstat(fd_, &st) < 0) {
+        logger_.error("Failed to stat file: " + std::string(strerror(errno)));
         closeDevice();
         return false;
     }
     
-    // Get block size
-    if (ioctl(fd_, BLKSSZGET, &block_size_) < 0) {
-        logger_.error("Failed to get block size: " + std::string(strerror(errno)));
-        closeDevice();
-        return false;
+    bool is_block_device = S_ISBLK(st.st_mode);
+    
+    if (is_block_device) {
+        // For block devices, use ioctl to get size and block size
+        if (ioctl(fd_, BLKGETSIZE64, &device_size_) < 0) {
+            logger_.error("Failed to get device size: " + std::string(strerror(errno)));
+            closeDevice();
+            return false;
+        }
+        
+        if (ioctl(fd_, BLKSSZGET, &block_size_) < 0) {
+            logger_.error("Failed to get block size: " + std::string(strerror(errno)));
+            closeDevice();
+            return false;
+        }
+    } else {
+        // For regular files, use fstat for size and use default block size
+        device_size_ = st.st_size;
+        block_size_ = 512;  // Direct I/O usually requires 512-byte alignment
+        
+        // If file is empty or new, set a minimum size
+        if (device_size_ == 0 && !readOnly) {
+            // Initialize with 100MB for new files
+            const off_t min_size = 100 * 1024 * 1024;
+            logger_.info("Initializing new file with size " + std::to_string(min_size) + " bytes");
+            
+            if (ftruncate(fd_, min_size) < 0) {
+                logger_.error("Failed to initialize file size: " + std::string(strerror(errno)));
+                closeDevice();
+                return false;
+            }
+            device_size_ = min_size;
+        }
     }
     
     is_direct_io_ = true;
     
-    logger_.info("Device opened successfully with O_DIRECT");
-    logger_.info("Device size: " + std::to_string(device_size_) + " bytes");
+    logger_.info("Device/file opened successfully with O_DIRECT");
+    logger_.info("Size: " + std::to_string(device_size_) + " bytes");
     logger_.info("Block size: " + std::to_string(block_size_) + " bytes");
     
     return true;
