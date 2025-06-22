@@ -10,6 +10,7 @@ find_package(pybind11 REQUIRED)
 
 # Add include directories
 include_directories(${CMAKE_SOURCE_DIR}/src)
+include_directories(${CMAKE_SOURCE_DIR}/pybind11)
 
 # Define source files
 set(VECTOR_STORE_SRCS 

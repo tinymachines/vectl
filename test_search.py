@@ -7,6 +7,7 @@ import random
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "build"))
 
 import vector_cluster_store_py
+
 # Create a logger
 logger = vector_cluster_store_py.Logger("vector_store.log")
 
@@ -14,7 +15,7 @@ logger = vector_cluster_store_py.Logger("vector_store.log")
 store = vector_cluster_store_py.VectorClusterStore(logger)
 store.initialize("./vector_store.bin", "kmeans", 768, 10)
 
-rvec = lambda: [ random.random() for i in range(0, 768) ]
+rvec = lambda: [random.random() for i in range(0, 768)]
 
 # Store a vector
 vector_id = 0
