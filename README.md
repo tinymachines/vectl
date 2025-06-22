@@ -1,15 +1,15 @@
-# Vector Cluster Store
+# VectorClusterStore
 
 A high-performance vector embedding storage system with clustering support, optimized for raw block devices. Perfect for semantic search, RAG systems, and other vector database applications.
 
 ## Features
 
-- Direct block device access for optimized performance
-- K-means clustering for efficient vector similarity search
-- Python bindings for seamless integration
-- Memory-mapped I/O for high-throughput operations
-- Support for both file and block device storage
-- Command-line interface for management and testing
+- 🚀 Direct block device access for optimized performance
+- 🎯 K-means clustering for efficient vector similarity search
+- 🐍 Python bindings for seamless integration
+- 💾 Memory-mapped I/O for high-throughput operations
+- 📁 Support for both file and block device storage
+- 🛠️ Command-line interface for management and testing
 
 ## Requirements
 
@@ -17,97 +17,107 @@ A high-performance vector embedding storage system with clustering support, opti
 - C++17 compatible compiler (GCC 9+ or Clang 10+)
 - CMake 3.10+
 - Python 3.6+ (for Python bindings)
-- pybind11
-- numpy
-- [Optional] Ollama for text embeddings
+- Git (for pybind11 submodule)
 
-## Building and Installation
+## Installation
 
-### Building from Source
+### Step 1: Clone the Repository
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/vector-cluster-store.git
-   cd vector-cluster-store
-   ```
-
-2. Build the project:
-   ```bash
-   ./build.sh
-   ```
-
-3. For Python bindings:
-   ```bash
-   pip install -e .
-   ```
-
-### Build Options
-
-The project includes a comprehensive build script with several options:
 ```bash
-./build.sh        # Clean and build
-./build.sh clean  # Clean only
-./build.sh rebuild # Clean and rebuild completely
+git clone https://github.com/yourusername/vector-cluster-store.git
+cd vector-cluster-store
+
+# Initialize pybind11 submodule
+git submodule update --init --recursive
 ```
 
-The build script performs the following actions:
+### Step 2: Install Python Dependencies
+
+**Important**: You must install pybind11 via pip before building:
+
 ```bash
-- Cleans any previous build artifacts
-- Configures the project with CMake
-- Builds the C++ library and executables
-- Verifies the created binaries
+# Install pybind11 first
+pip install pybind11
+
+# Install other dependencies
+pip install numpy
+# Or install all dependencies at once
+pip install -r requirements.txt
 ```
 
-### Python Bindings
+### Step 3: Build the Project
 
-After building the core C++ library, you can install the Python bindings:
+The project uses CMake for building. Note that the standalone `make` command in the root directory may not work properly - use the build script or CMake directly.
+
+#### Option A: Using the Build Script (Recommended)
 
 ```bash
-pip install -e .
+./build.sh        # Clean and build everything
 ```
 
-This will build and install the Python module, making it available for import in your Python scripts.
-
-### Manual Compilation
-
-If you prefer to build manually:
+#### Option B: Manual CMake Build
 
 ```bash
-# Clean previous build
+# Clean any previous build
 rm -rf build/
 mkdir -p build
 cd build
 
-# Configure and build
+# Configure with CMake
 cmake ..
+
+# Build with make (from within the build directory)
 make -j$(nproc)
+
 cd ..
 ```
+
+**Note**: The `Makefile` in the root directory is legacy and may not include all dependencies. Always use CMake for building.
+
+### Step 4: Install Python Bindings
+
+After building the C++ components, install the Python module:
+
+```bash
+# Install in development mode (recommended for development)
+pip install -e .
+```
+
+This step is crucial as it properly sets up the Python module paths and makes the `vector_cluster_store_py` module importable.
+
+### Verify Installation
+
+Test that everything is installed correctly:
+
+```bash
+# Test Python bindings
+python test_binding.py
+
+# If successful, you should see:
+# Successfully imported vector_cluster_store_py
+# Created logger
+# Created vector store
+# Test completed successfully!
+```
+
+## Common Installation Issues
+
+### "No module named 'pybind11'"
+**Solution**: Install pybind11 first with `pip install pybind11`
+
+### "make: *** No targets specified and no makefile found"
+**Solution**: Don't use `make` in the root directory. Use `./build.sh` or build from the `build/` directory with CMake.
+
+### "ImportError: No module named vector_cluster_store_py"
+**Solution**: Run `pip install -e .` after building with CMake to install the Python bindings.
+
+### CMake succeeds but can't find the Python module
+**Solution**: The CMake build creates the `.so` file in the `build/` directory, but Python needs it installed. Always run `pip install -e .` after building.
+
 ## Usage
 
-### File-based Storage (Recommended for Testing)###
+### Python API Example
 
-This mode uses a regular file for storage, which is safer and doesn't require special permissions:
-```
-bash
-./ollama_vector_search.py ./vector_store.bin
-```
-
-## Raw Block Device Storage (Advanced)
-
-### For production use with high-performance requirements, you can use raw block devices:
-
-Prepare a dedicated block device (WARNING: This will erase all data on the device):
-```bash
-sudo ./prepare_device.sh /dev/sdX   # Replace sdX with your device
-
-```
-Run the vector store with the block device:
-```bash
-sudo ./ollama_vector_search.py /dev/sdX
-```
-
-## Python API
 ```python
 import vector_cluster_store_py
 
@@ -120,49 +130,61 @@ store.initialize("./vector_store.bin", "kmeans", 768, 10)
 
 # Store a vector
 vector_id = 0
-vector = [0.1, 0.2, 0.3]  # Your embedding vector
+vector = [0.1, 0.2, 0.3, ...]  # Your 768-dimensional embedding
 metadata = "Example metadata"
 store.store_vector(vector_id, vector, metadata)
 
-# Retrieve a vector
-retrieved_vector = store.retrieve_vector(vector_id)
-
 # Find similar vectors
-query_vector = [0.1, 0.2, 0.3]  # Query embedding
+query_vector = [0.1, 0.2, 0.3, ...]  # Query embedding
 results = store.find_similar_vectors(query_vector, 5)  # Get top 5 matches
 ```
 
-# Architecture
+### Command Line Usage
 
-The system uses a clustered approach to vector storage:
+For file-based storage (recommended for testing):
+```bash
+./ollama_vector_search.py ./vector_store.bin
+```
 
-<pre>
+For raw block device storage (requires root):
+```bash
+# Prepare device (WARNING: This will erase all data!)
+sudo ./scripts/prepare_device.sh /dev/sdX
+
+# Run with block device
+sudo ./ollama_vector_search.py /dev/sdX
+```
+
+## Architecture
+
+The system uses a clustered approach for efficient vector storage and retrieval:
+
+```
 ┌───────────────────┐    ┌────────────────────┐    ┌──────────────────┐
-│ LLM Application   │    │ Vector Cluster     │    │                  │
-│ (Query Interface) │───►│ Storage Library    │───►│ Storage Device   │
+│ Python/C++ App    │───▶│ VectorClusterStore │───▶│ Storage Device   │
+│                   │    │ (C++ Core)         │    │ (File/Block)     │
 └───────────────────┘    └────────────────────┘    └──────────────────┘
-                                    ▲                        │
-                                    │                        │
-                         ┌──────────┴──────────┐             │
-                         │ Clustering Index    │◄────────────┘
+                                    │
+                         ┌──────────▼──────────┐
+                         │ K-means Clustering  │
+                         │ (Similarity Search) │
                          └─────────────────────┘
-</pre>
+```
 
-# Block Device Layout
-<pre>
+### Storage Layout
+
+```
 ┌──────────────────────────────────────────────────────────────┐
-│                       Block Device                           │
-├────────────┬───────────────┬──────────────┬──────────────────┤
-│ Header     │ Cluster Map   │ Vector Map   │ Vector Data      │
-│ (512B)     │ Region        │ Region       │ Region           │
-├────────────┴───────────────┴──────────────┴──────────────────┤
-│                                                              │
-│                      Free Space                              │
-│                                                              │
-└──────────────────────────────────────────────────────────────┘
-</pre>
+│                       Storage Device                         │
+├────────────┬───────────────┬──────────────┬─────────────────┤
+│ Header     │ Cluster Map   │ Vector Map   │ Vector Data     │
+│ (512B)     │ (Index)       │ (Metadata)   │ (Embeddings)    │
+└────────────┴───────────────┴──────────────┴─────────────────┘
+```
 
-# Performance comparison on a 128GB USB device with Raspberry Pi 4B:
+## Performance
+
+Performance comparison on a 128GB USB device with Raspberry Pi 4B:
 
 | Operation | Traditional Filesystem | Raw Block Device | Improvement |
 |-----------|------------------------|------------------|-------------|
@@ -171,8 +193,63 @@ The system uses a clustered approach to vector storage:
 | Vector Search (1M vectors) | 500-1000ms | 100-300ms | 70-80% |
 | Memory Usage | 200-300MB | 50-100MB | 60-70% |
 
-## License
-[MIT License](https://claude.ai/chat/LICENSE)
+## Development
+
+### Running Tests
+
+```bash
+# C++ unit tests
+./build/test_cluster_store
+./build/vector_store_test
+
+# Python tests
+python test_binding.py
+python test_import.py
+python test_search.py
+```
+
+### Building for Development
+
+For development, always use the build script:
+```bash
+./build.sh clean   # Clean only
+./build.sh rebuild # Clean and rebuild
+```
+
+## Troubleshooting
+
+### Check Installation
+```bash
+# Verify CMake
+cmake --version
+
+# Verify pybind11
+pip show pybind11
+
+# Check built files
+ls -la build/*.so
+```
+
+### Debug Import Issues
+```python
+import sys
+print(sys.path)  # Check Python path
+import vector_cluster_store_py  # Should work after pip install -e .
+```
 
 ## Contributing
-Contributions are welcome! Please feel free to submit a Pull Request.
+
+Contributions are welcome! Please ensure:
+1. Code follows C++17 standards
+2. Python code follows PEP 8
+3. All tests pass
+4. New features include tests
+
+## License
+
+[MIT License](LICENSE)
+
+## Acknowledgments
+
+- Built with [pybind11](https://github.com/pybind/pybind11) for Python bindings
+- Optimized for vector similarity search use cases
