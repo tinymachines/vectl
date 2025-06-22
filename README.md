@@ -141,9 +141,46 @@ results = store.find_similar_vectors(query_vector, 5)  # Get top 5 matches
 
 ### Command Line Usage
 
-For file-based storage (recommended for testing):
+All example scripts are located in the `examples/` directory.
+
+#### Interactive Ollama Search
 ```bash
-./ollama_vector_search.py ./vector_store.bin
+cd examples
+python ollama_vector_search.py ../vector_store.bin
+```
+
+#### Batch Embedding Files
+```bash
+cd examples
+python batch_embed_files.py --input-dir /path/to/documents --output ../vector_store.bin
+```
+
+#### Command-Line Vector Search
+The new `vector_search.py` script provides a simple command-line interface for searching vectors:
+
+```bash
+cd examples
+
+# Basic search
+python vector_search.py "your search query"
+
+# Search with options
+python vector_search.py "search query" --top-k 10 --output text
+
+# Search via stdin
+echo "search query" | python vector_search.py --output json
+
+# Search with custom paths
+python vector_search.py "query" --store ../vector_store.bin --metadata ../batch_embed_metadata.json
+
+# Available options:
+#   --store PATH        Path to vector store (default: ../vector_store.bin)
+#   --metadata PATH     Path to metadata JSON (default: ../batch_embed_metadata.json)
+#   --model NAME        Ollama model name (default: nomic-embed-text:latest)
+#   --top-k N          Number of results to return (default: 10)
+#   --threshold FLOAT  Similarity threshold 0-1 (default: 0.0)
+#   --output FORMAT    Output format: json, text (default: json)
+#   --no-embed         Use raw query as vector (for testing)
 ```
 
 For raw block device storage (requires root):
@@ -152,7 +189,8 @@ For raw block device storage (requires root):
 sudo ./scripts/prepare_device.sh /dev/sdX
 
 # Run with block device
-sudo ./ollama_vector_search.py /dev/sdX
+cd examples
+sudo python ollama_vector_search.py /dev/sdX
 ```
 
 ## Architecture
