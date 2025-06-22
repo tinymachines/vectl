@@ -1,4 +1,4 @@
-# VectorClusterStore
+#  Vectl
 
 A high-performance vector embedding storage system with clustering support, optimized for raw block devices. Perfect for semantic search, RAG systems, and other vector database applications.
 
