@@ -9,7 +9,9 @@ import numpy as np
 from datetime import datetime
 
 # Import our vector store Python bindings
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "build"))
+script_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(script_dir)
+sys.path.append(os.path.join(parent_dir, "build"))
 import vector_cluster_store_py
 
 # Configuration
