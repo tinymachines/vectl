@@ -302,12 +302,43 @@ Performance comparison on a 128GB USB device with Raspberry Pi 4B:
 
 ### Running Tests
 
+VectorClusterStore includes a comprehensive pytest-based test suite:
+
+```bash
+# Install pytest if not already installed
+pip install pytest
+
+# Run all tests
+pytest test/
+
+# Run specific test categories
+pytest test/test_vector_store.py     # Core functionality tests
+pytest test/test_ollama_tool.py      # CLI interface tests  
+pytest test/test_integration.py     # End-to-end workflow tests
+
+# Run without Ollama-dependent tests
+pytest test/ -m "not requires_ollama"
+
+# Run with coverage
+pip install pytest-cov
+pytest test/ --cov=vector_cluster_store_py --cov-report=html
+```
+
+The test suite covers:
+- Core C++ functionality via Python bindings
+- Command-line interface operations
+- File creation and path handling
+- Batch processing workflows
+- Integration between CLI and Python API
+- Error handling and edge cases
+
+#### Legacy Tests
 ```bash
 # C++ unit tests
 ./build/test_cluster_store
 ./build/vector_store_test
 
-# Python tests
+# Python binding tests
 python test_binding.py
 python test_import.py
 python test_search.py

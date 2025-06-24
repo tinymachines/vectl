@@ -46,6 +46,11 @@ class OllamaVectorTool:
             if device_dir and not os.path.exists(device_dir):
                 os.makedirs(device_dir, exist_ok=True)
             
+            # Create empty file if it doesn't exist
+            if not os.path.exists(self.device_path):
+                # Touch the file to create it
+                open(self.device_path, 'a').close()
+            
             # Create logger
             logger = vector_cluster_store_py.Logger(self.log_file)
 
@@ -132,13 +137,16 @@ class OllamaVectorTool:
             sys.exit(1)
 
     def embed_mode(self):
-        """Handle embed mode - store vectors from input text"""
+        """Handle embed mode - store vectors from input text (always in batch mode)"""
         self.init_vector_store()
         self.load_metadata()
         
         if self.args.verbose:
             print(f"Embedding mode - using model: {self.embedding_model}")
             print(f"Next ID: {self.metadata['next_id']}")
+        
+        # Collect all texts to embed (batch mode)
+        texts = []
         
         # Handle input from stdin or arguments
         if self.args.text:
@@ -148,10 +156,30 @@ class OllamaVectorTool:
                 print("Reading from stdin (one text per line, Ctrl+D to finish)...")
             texts = [line.strip() for line in sys.stdin if line.strip()]
         
+        if not texts:
+            print("No text provided for embedding")
+            sys.exit(1)
+        
+        if self.args.verbose:
+            print(f"Processing {len(texts)} texts in batch mode...")
+        
+        # Process all texts in batch
         success_count = 0
-        for text in texts:
-            embedding = self.get_embedding(text)
-            
+        failed_texts = []
+        embeddings_batch = []
+        
+        # Get embeddings for all texts
+        for i, text in enumerate(texts):
+            try:
+                embedding = self.get_embedding(text)
+                embeddings_batch.append((i, text, embedding))
+            except Exception as e:
+                failed_texts.append((i, text, str(e)))
+                if self.args.verbose:
+                    print(f"Failed to get embedding for text {i}: {e}")
+        
+        # Store all embeddings in batch
+        for idx, text, embedding in embeddings_batch:
             # Prepare metadata string (JSON)
             metadata_entry = {
                 "text": text,
@@ -173,24 +201,39 @@ class OllamaVectorTool:
                     self.metadata["next_id"] = vector_id + 1
                     success_count += 1
                 else:
-                    print(f"Failed to store: \"{text}\"")
+                    failed_texts.append((idx, text, "Failed to store vector"))
+                    if self.args.verbose:
+                        print(f"Failed to store: \"{text}\"")
             except Exception as e:
-                print(f"Error storing text: {e}")
+                failed_texts.append((idx, text, str(e)))
                 if self.args.verbose:
+                    print(f"Error storing text: {e}")
                     import traceback
                     traceback.print_exc()
         
+        # Save metadata after batch processing
         self.save_metadata()
         
         if self.args.format == "json":
             result = {
-                "success": True,
+                "success": success_count > 0,
+                "total_texts": len(texts),
                 "stored_count": success_count,
+                "failed_count": len(failed_texts),
                 "next_id": self.metadata["next_id"]
             }
+            if failed_texts:
+                result["failures"] = [{"index": idx, "text": text[:100], "error": err} for idx, text, err in failed_texts]
             print(json.dumps(result, indent=2))
         else:
-            print(f"\nSuccessfully stored {success_count} embeddings")
+            print(f"\nBatch processing complete:")
+            print(f"  Total texts: {len(texts)}")
+            print(f"  Successfully stored: {success_count}")
+            if failed_texts:
+                print(f"  Failed: {len(failed_texts)}")
+                if self.args.verbose:
+                    for idx, text, err in failed_texts:
+                        print(f"    - Text {idx}: {err}")
 
     def search_mode(self):
         """Handle search mode - find similar vectors"""

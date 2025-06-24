@@ -30,6 +30,29 @@ pip install -e .    # Install Python bindings in development mode
 ```
 
 ### Running Tests
+
+#### Comprehensive Test Suite (Recommended)
+```bash
+# Install pytest if needed
+pip install pytest
+
+# Run all tests
+pytest test/
+
+# Run specific test categories
+pytest test/test_vector_store.py     # Core C++ functionality tests
+pytest test/test_ollama_tool.py      # CLI interface tests
+pytest test/test_integration.py     # End-to-end workflow tests
+
+# Run without Ollama dependencies
+pytest test/ -m "not requires_ollama"
+
+# Run with coverage reporting
+pip install pytest-cov
+pytest test/ --cov=vector_cluster_store_py --cov-report=html
+```
+
+#### Legacy Tests
 ```bash
 # C++ tests
 ./build/test_cluster_store
@@ -81,9 +104,14 @@ python test_search.py
 - Use existing logging infrastructure via Logger class
 
 ### Testing Approach
-- Unit tests in `src/test_*.cpp` for C++ components
-- Python tests in root directory (`test_*.py`)
+- Comprehensive pytest suite in `test/` directory
+  - `test_vector_store.py` - Core C++ functionality via Python bindings
+  - `test_ollama_tool.py` - CLI interface and argument handling
+  - `test_integration.py` - End-to-end workflows and interoperability
+- Legacy unit tests in `src/test_*.cpp` for C++ components
+- Legacy Python tests in root directory (`test_*.py`)
 - Performance tests in `vector_store_test.cpp`
+- Fixtures for temporary files, sample data, and Ollama availability checking
 
 ## Important Notes
 

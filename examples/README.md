@@ -31,8 +31,11 @@ A comprehensive command-line tool that combines embedding and search functionali
 
 #### Features:
 - Multiple operation modes: embed, search, maintenance, info
+- **Always operates in batch mode** for optimal performance
 - Flexible input/output options (stdin, command-line, JSON/text output)
-- Custom index locations with automatic metadata management
+- Custom index locations with automatic file/directory creation
+- Automatic metadata management with separate JSON files
+- Robust error handling and detailed progress reporting
 - Verbose mode for debugging
 
 #### Usage Examples:
@@ -142,10 +145,24 @@ When you specify a custom index path like `--index ~/myproject/vectors.bin`, the
 
 ## Performance Tips
 
-1. **Batch Operations**: Use stdin for embedding multiple texts at once
-2. **Maintenance**: Run maintenance periodically to optimize cluster distribution
-3. **Custom Dimensions**: Match `--dimension` to your embedding model's output
-4. **Cluster Count**: Adjust `--clusters` based on your dataset size (10-100 typical)
+1. **Batch Operations**: The tool automatically operates in batch mode for optimal performance
+   ```bash
+   # Embed multiple files efficiently
+   find docs/ -name "*.txt" -exec cat {} \; | python ollama_tool.py embed
+   
+   # Process a list of texts
+   echo -e "Text 1\nText 2\nText 3" | python ollama_tool.py embed
+   ```
+
+2. **File Management**: Files are automatically created in the specified location
+   ```bash
+   # Creates directory structure and files as needed
+   python ollama_tool.py embed --index ~/projects/vectors/data.bin --text "New project"
+   ```
+
+3. **Maintenance**: Run maintenance periodically to optimize cluster distribution
+4. **Custom Dimensions**: Match `--dimension` to your embedding model's output
+5. **Cluster Count**: Adjust `--clusters` based on your dataset size (10-100 typical)
 
 ## Troubleshooting
 
