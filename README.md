@@ -159,7 +159,48 @@ python batch_embed_files.py ./db/myproject/vectors.bin
 
 This makes it easy to manage multiple vector stores and keep all related files organized.
 
-#### Interactive Ollama Search
+#### Unified Ollama Tool (Recommended)
+
+The new `ollama_tool.py` combines embedding and search functionality in a single command-line tool:
+
+```bash
+cd examples
+
+# Embed a single text
+python ollama_tool.py embed --text "Hello world"
+
+# Embed multiple texts from stdin
+echo -e "First text\nSecond text" | python ollama_tool.py embed
+
+# Search for similar texts
+python ollama_tool.py search --query "Hello" --top-k 5
+
+# Search with JSON output
+python ollama_tool.py search --query "Hello" --format json
+
+# Use custom index location
+python ollama_tool.py embed --index /path/to/index.bin --text "Custom location"
+
+# Run maintenance
+python ollama_tool.py maintenance
+
+# Show store information
+python ollama_tool.py info
+
+# Available options:
+#   --index PATH        Path to vector store (default: ./vector_store.bin)
+#   --ollama-url URL    Ollama API URL (default: http://127.0.0.1:11434)
+#   --model NAME        Embedding model (default: nomic-embed-text:latest)
+#   --dimension N       Vector dimension (default: 768)
+#   --clusters N        Number of clusters (default: 10)
+#   --format FORMAT     Output format: text, json (default: text)
+#   --verbose          Enable verbose output
+#   --text TEXT        Text to embed (embed mode)
+#   --query QUERY      Query text (search mode)
+#   --top-k N          Number of results (default: 5)
+```
+
+#### Interactive Ollama Search (Legacy)
 ```bash
 cd examples
 python ollama_vector_search.py ../vector_store.bin
