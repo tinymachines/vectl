@@ -19,8 +19,8 @@ OLLAMA_API_URL = "http://127.0.0.1:11434/api/embed"
 EMBEDDING_MODEL = "nomic-embed-text:latest"
 VECTOR_DIM = 768  # Dimension of nomic-embed-text embeddings
 DEVICE_PATH = "./vector_store.bin"  # Default to file-based storage
-LOG_FILE = "./vector_store.log"  # Log file for the logger
-METADATA_FILE = "./vector_store_metadata.json"
+LOG_FILE = None  # Will be auto-derived from device path
+METADATA_FILE = None  # Will be auto-derived from device path
 
 
 # Initialize vector store with proper error handling
@@ -40,6 +40,9 @@ def init_vector_store():
             sys.exit(1)
 
         print("Vector store initialized successfully")
+        print(f"Device path: {DEVICE_PATH}")
+        print(f"Log file: {LOG_FILE}")
+        print(f"Metadata file: {METADATA_FILE}")
         return store
 
     except Exception as e:
@@ -372,5 +375,15 @@ if __name__ == "__main__":
         else:
             print(f"Using file storage: {sys.argv[1]}")
             DEVICE_PATH = sys.argv[1]
+    
+    # Auto-derive log and metadata paths from device path
+    device_dir = os.path.dirname(DEVICE_PATH) if os.path.dirname(DEVICE_PATH) else "."
+    device_name = os.path.splitext(os.path.basename(DEVICE_PATH))[0]
+    
+    # Ensure directory exists
+    os.makedirs(device_dir, exist_ok=True)
+    
+    LOG_FILE = os.path.join(device_dir, f"{device_name}.log")
+    METADATA_FILE = os.path.join(device_dir, f"{device_name}_metadata.json")
 
     interactive_shell()

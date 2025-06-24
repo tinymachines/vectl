@@ -307,14 +307,14 @@ def main():
     
     parser.add_argument(
         "--log-file",
-        default=DEFAULT_LOG_FILE,
-        help=f"Log file path (default: {DEFAULT_LOG_FILE})"
+        default=None,
+        help=f"Log file path (default: auto-derived from device path)"
     )
     
     parser.add_argument(
         "--metadata-file",
-        default=DEFAULT_METADATA_FILE,
-        help=f"Metadata file path (default: {DEFAULT_METADATA_FILE})"
+        default=None,
+        help=f"Metadata file path (default: auto-derived from device path)"
     )
     
     parser.add_argument(
@@ -330,6 +330,19 @@ def main():
     )
     
     args = parser.parse_args()
+    
+    # Auto-derive log and metadata paths from device path if not specified
+    device_dir = os.path.dirname(args.device_path) if os.path.dirname(args.device_path) else "."
+    device_name = os.path.splitext(os.path.basename(args.device_path))[0]
+    
+    # Ensure directory exists
+    os.makedirs(device_dir, exist_ok=True)
+    
+    if args.log_file is None:
+        args.log_file = os.path.join(device_dir, f"{device_name}.log")
+    
+    if args.metadata_file is None:
+        args.metadata_file = os.path.join(device_dir, f"{device_name}_metadata.json")
     
     # Check if using block device
     if args.device_path.startswith("/dev/"):

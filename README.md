@@ -143,16 +143,42 @@ results = store.find_similar_vectors(query_vector, 5)  # Get top 5 matches
 
 All example scripts are located in the `examples/` directory.
 
+#### Path Handling
+
+The example scripts now automatically organize all related files (`.bin`, `.log`, and `_metadata.json`) in the same directory as your vector store:
+
+```bash
+# When you specify a custom path like:
+python batch_embed_files.py ./db/myproject/vectors.bin
+
+# The following files will be created together:
+# ./db/myproject/vectors.bin         # Vector store
+# ./db/myproject/vectors.log         # Log file
+# ./db/myproject/vectors_metadata.json  # Metadata file
+```
+
+This makes it easy to manage multiple vector stores and keep all related files organized.
+
 #### Interactive Ollama Search
 ```bash
 cd examples
 python ollama_vector_search.py ../vector_store.bin
+
+# Using custom paths:
+python ollama_vector_search.py ./db/myproject/vectors.bin
 ```
 
 #### Batch Embedding Files
 ```bash
 cd examples
-python batch_embed_files.py --input-dir /path/to/documents --output ../vector_store.bin
+# Basic usage with stdin:
+find /path/to/documents -name "*.txt" | python batch_embed_files.py
+
+# With custom vector store path:
+find /path/to/documents -name "*.txt" | python batch_embed_files.py ./db/myproject/vectors.bin
+
+# Override auto-derived paths if needed:
+python batch_embed_files.py ./db/store.bin --metadata-file ./custom/metadata.json --log-file ./custom/store.log
 ```
 
 #### Command-Line Vector Search
