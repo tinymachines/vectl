@@ -353,6 +353,24 @@ bool VectorClusterStore::retrieveVector(uint32_t vector_id, Vector& vector) {
     return true;
 }
 
+std::string VectorClusterStore::getVectorMetadata(uint32_t vector_id) {
+    std::lock_guard<std::mutex> lock(store_mutex_);
+    
+    if (fd_ < 0) {
+        logger_.error("Device not open");
+        return "";
+    }
+    
+    // Check if vector exists
+    auto it = vector_map_.find(vector_id);
+    if (it == vector_map_.end()) {
+        logger_.debug("Vector " + std::to_string(vector_id) + " not found");
+        return "";
+    }
+    
+    return it->second.metadata;
+}
+
 std::vector<std::pair<uint32_t, float>> VectorClusterStore::findSimilarVectors(
     const Vector& query, uint32_t k) {
     

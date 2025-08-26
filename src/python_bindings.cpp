@@ -48,6 +48,14 @@ PYBIND11_MODULE(vector_cluster_store_py, m) {
                 return Vector();
             }
         })
+        .def("get_vector_metadata", [](VectorClusterStore& self, uint32_t id) {
+            try {
+                return self.getVectorMetadata(id);
+            } catch (const std::exception& e) {
+                std::cerr << "C++ exception in get_vector_metadata: " << e.what() << std::endl;
+                return std::string("");
+            }
+        })
         .def("find_similar_vectors", [](VectorClusterStore& self, const Vector& query, uint32_t k = 10) {
             std::cout << "Python binding: find_similar_vectors called with query size=" 
                       << query.size() << ", k=" << k << std::endl;

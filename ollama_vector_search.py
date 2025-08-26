@@ -154,10 +154,25 @@ def retrieve_vector(store, id, metadata):
             print(f"First 5 values: {vector[:5]}")
             print(f"L2 norm: {np.linalg.norm(vector):.4f}")
             
-            # Show original text if available
-            entry = metadata["entries"].get(str(id), {})
-            text = entry.get("text", "Unknown")
-            timestamp = entry.get("timestamp", "Unknown")
+            # Show original text if available - try getting from vector store first
+            try:
+                metadata_json = store.get_vector_metadata(id)
+                if metadata_json:
+                    import json
+                    metadata_entry = json.loads(metadata_json)
+                    text = metadata_entry.get("text", 
+                           metadata_entry.get("text_preview", "Unknown"))
+                    timestamp = metadata_entry.get("timestamp", "Unknown")
+                else:
+                    # Fallback to local metadata
+                    entry = metadata["entries"].get(str(id), {})
+                    text = entry.get("text", "Unknown")
+                    timestamp = entry.get("timestamp", "Unknown")
+            except:
+                # Final fallback to local metadata
+                entry = metadata["entries"].get(str(id), {})
+                text = entry.get("text", "Unknown")
+                timestamp = entry.get("timestamp", "Unknown")
             
             print(f"Original text: \"{text}\"")
             print(f"Stored on: {timestamp}")
@@ -190,13 +205,23 @@ def find_closest(store, text, metadata, k=5):
             print("-" * 80)
             # Sort by similarity (highest first)
             for id, similarity in sorted(results, key=lambda x: x[1], reverse=True):
-                # Try to parse metadata from string if it's JSON
+                # Get metadata directly from the vector store
                 try:
-                    entry = metadata["entries"].get(str(id), {})
-                    match_text = entry.get("text", "Unknown")
-                    timestamp = entry.get("timestamp", "Unknown")
+                    metadata_json = store.get_vector_metadata(id)
+                    if metadata_json:
+                        import json
+                        metadata_entry = json.loads(metadata_json)
+                        # Try different text fields in the metadata
+                        match_text = metadata_entry.get("text", 
+                                    metadata_entry.get("text_preview", "Unknown"))
+                        timestamp = metadata_entry.get("timestamp", "Unknown")
+                    else:
+                        # Fallback to local metadata if store metadata is empty
+                        entry = metadata["entries"].get(str(id), {})
+                        match_text = entry.get("text", "Unknown")
+                        timestamp = entry.get("timestamp", "Unknown")
                 except:
-                    # Fallback
+                    # Final fallback
                     match_text = "Unknown"
                     timestamp = "Unknown"
                 

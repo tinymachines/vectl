@@ -32,6 +32,9 @@ public:
     // Retrieve a vector by ID
     bool retrieveVector(uint32_t vector_id, Vector& vector);
     
+    // Get metadata for a vector by ID
+    std::string getVectorMetadata(uint32_t vector_id);
+    
     // Find similar vectors to the query
     std::vector<std::pair<uint32_t, float>> findSimilarVectors(
         const Vector& query, uint32_t k = 10);
