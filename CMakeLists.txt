@@ -45,6 +45,30 @@ add_executable(vector_store_test
 )
 target_link_libraries(vector_store_test vector_cluster_store stdc++ m)
 
+# Vector store diagnostic tool
+add_executable(vector_store_diagnostic
+    src/vector_store_diagnostic.cpp
+)
+target_link_libraries(vector_store_diagnostic vector_cluster_store stdc++ m)
+
+# Vector store validation tool
+add_executable(vector_store_validate
+    src/vector_store_validate.cpp
+)
+target_link_libraries(vector_store_validate vector_cluster_store stdc++ m)
+
+# Vector store repair tool
+add_executable(vector_store_repair
+    src/vector_store_repair.cpp
+)
+target_link_libraries(vector_store_repair vector_cluster_store stdc++ m)
+
+# Corruption detection test
+add_executable(corruption_test
+    src/corruption_test.cpp
+)
+target_link_libraries(corruption_test vector_cluster_store stdc++ m)
+
 # Installation
 install(TARGETS vector_cluster_store vector_cluster_store_py
     LIBRARY DESTINATION lib
