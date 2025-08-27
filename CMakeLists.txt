@@ -69,6 +69,18 @@ add_executable(corruption_test
 )
 target_link_libraries(corruption_test vector_cluster_store stdc++ m)
 
+# Fast vector comparison tool
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(CURL REQUIRED libcurl)
+pkg_check_modules(JSONCPP REQUIRED jsoncpp)
+
+add_executable(fastcomp
+    src/fastcomp.cpp
+)
+target_include_directories(fastcomp PRIVATE ${CURL_INCLUDE_DIRS} ${JSONCPP_INCLUDE_DIRS})
+target_link_libraries(fastcomp ${CURL_LIBRARIES} ${JSONCPP_LIBRARIES} stdc++ m)
+target_compile_options(fastcomp PRIVATE ${CURL_CFLAGS_OTHER} ${JSONCPP_CFLAGS_OTHER})
+
 # Installation
 install(TARGETS vector_cluster_store vector_cluster_store_py
     LIBRARY DESTINATION lib

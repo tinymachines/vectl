@@ -72,6 +72,9 @@ build() {
         echo " - build/test_cluster_store"
         echo " - build/raw_device_test"
         echo " - build/vector_store_test"
+        if [ -f "build/fastcomp" ]; then
+            echo " - build/fastcomp"
+        fi
     else
         echo -e "${RED}Warning: Some expected executables were not created.${NC}"
     fi
