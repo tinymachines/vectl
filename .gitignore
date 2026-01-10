@@ -261,3 +261,8 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Test artifacts
+test_vector_store*.bin
+vector_store.bin
+*.bin
