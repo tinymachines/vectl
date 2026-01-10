@@ -9,6 +9,7 @@ A high-performance vector embedding storage system with clustering support, opti
 - Python bindings for seamless integration
 - Memory-mapped I/O for high-throughput operations
 - Support for both file and block device storage
+- **fastcomp** CLI tool for quick text similarity comparisons
 
 ## Requirements
 
@@ -82,6 +83,33 @@ store.initialize("./vector_store.bin", "kmeans", 768, 10)
 store.store_vector(0, [0.1] * 768, "metadata")
 retrieved = store.retrieve_vector(0)
 ```
+
+### fastcomp CLI
+
+Compare text similarity using Ollama embeddings:
+
+```bash
+# Install with Ollama support
+pip install -e ".[ollama]"
+
+# Compare texts (first line is basis, rest are compared against it)
+echo -e 'Michigan\nDetroit\nChicago\nCalifornia' | fastcomp
+
+# Use Euclidean distance instead of cosine
+printf 'cat\ndog\ncar\n' | fastcomp -m euclidean
+
+# Use a different model
+echo -e 'hello\nworld' | fastcomp --model mxbai-embed-large
+```
+
+Output shows distance values (lower = more similar):
+```
+0.123456    # Detroit vs Michigan
+0.234567    # Chicago vs Michigan
+0.345678    # California vs Michigan
+```
+
+Requires Ollama running locally (`ollama serve`).
 
 ## Testing
 

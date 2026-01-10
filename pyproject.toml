@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vector-store"
-version = "0.2.0"
+version = "0.3.0"
 description = "High-performance vector embedding storage with clustering support"
 readme = "README.md"
 license = {text = "MIT"}
@@ -40,6 +40,9 @@ dev = [
 ollama = [
     "requests>=2.25.0",
 ]
+
+[project.scripts]
+fastcomp = "vector_store.fastcomp:main"
 
 [tool.setuptools]
 packages = ["vector_store"]
