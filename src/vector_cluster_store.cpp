@@ -112,10 +112,14 @@ bool VectorClusterStore::openDevice(bool readOnly) {
     }
     
     int flags = readOnly ? O_RDONLY : O_RDWR;
-    
-    // Add O_CREAT flag if this might be a new file
-    if (!readOnly && device_path_[0] != '/') {
-        flags |= O_CREAT;
+
+    // Add O_CREAT flag if not read-only (allows creating new files)
+    // We exclude block devices which typically start with /dev/
+    if (!readOnly) {
+        bool is_block_device_path = (device_path_.find("/dev/") == 0);
+        if (!is_block_device_path) {
+            flags |= O_CREAT;
+        }
     }
     
     logger_.debug("Opening device/file: " + device_path_);
@@ -311,15 +315,15 @@ bool VectorClusterStore::storeVector(uint32_t vector_id, const Vector& vector, c
         next_vector_id_ = vector_id + 1;
     }
     
-    // Update metadata
-    if (!writeHeader() || !writeVectorMap()) {
+    // Update metadata and persist clustering model
+    if (!writeHeader() || !writeVectorMap() || !writeClusterMap()) {
         logger_.error("Failed to update metadata");
         return false;
     }
-    
-    logger_.debug("Stored vector " + std::to_string(vector_id) + 
+
+    logger_.debug("Stored vector " + std::to_string(vector_id) +
                  " in cluster " + std::to_string(cluster_id));
-    
+
     return true;
 }
 
@@ -454,13 +458,13 @@ bool VectorClusterStore::deleteVector(uint32_t vector_id) {
     
     // Remove from vector map
     vector_map_.erase(it);
-    
-    // Update metadata
-    if (!writeHeader() || !writeVectorMap()) {
+
+    // Update metadata and persist clustering model
+    if (!writeHeader() || !writeVectorMap() || !writeClusterMap()) {
         logger_.error("Failed to update metadata after deletion");
         return false;
     }
-    
+
     logger_.debug("Deleted vector " + std::to_string(vector_id));
     
     // Note: We don't reclaim space on the device yet - this would be a future enhancement
@@ -780,48 +784,36 @@ bool VectorClusterStore::writeClusterMap() {
     if (fd_ < 0) {
         return false;
     }
-    
-    // Get all clusters
-    std::vector<ClusterInfo> clusters = clustering_->getAllClusters();
-    
-    // Calculate size needed
-    size_t size_needed = 0;
-    for (const auto& cluster : clusters) {
-        size_needed += cluster.serialize().size() + sizeof(uint32_t);
-    }
-    
+
+    // Serialize the full clustering model state
+    std::vector<uint8_t> serialized = clustering_->serialize();
+
+    // Calculate size needed (4 bytes for size + serialized data)
+    size_t size_needed = sizeof(uint32_t) + serialized.size();
+
     // Ensure we have enough space
     if (size_needed > (vector_map_offset_ - cluster_map_offset_)) {
-        logger_.error("Cluster map too large");
+        logger_.error("Cluster map too large: need " + std::to_string(size_needed) +
+                     " bytes, have " + std::to_string(vector_map_offset_ - cluster_map_offset_));
         return false;
     }
-    
-    // Write number of clusters
-    uint32_t num_clusters = static_cast<uint32_t>(clusters.size());
-    if (!writeAligned(&num_clusters, sizeof(num_clusters), cluster_map_offset_)) {
+
+    // Write size of serialized data
+    uint32_t data_size = static_cast<uint32_t>(serialized.size());
+    if (!writeAligned(&data_size, sizeof(data_size), cluster_map_offset_)) {
+        logger_.error("Failed to write cluster map size");
         return false;
     }
-    
-    // Write each cluster
-    uint64_t offset = cluster_map_offset_ + sizeof(uint32_t);
-    for (const auto& cluster : clusters) {
-        // Serialize cluster info
-        std::vector<uint8_t> serialized = cluster.serialize();
-        
-        // Write size and data
-        uint32_t chunk_size = static_cast<uint32_t>(serialized.size());
-        if (!writeAligned(&chunk_size, sizeof(chunk_size), offset)) {
+
+    // Write serialized clustering model
+    if (data_size > 0) {
+        if (!writeAligned(serialized.data(), serialized.size(), cluster_map_offset_ + sizeof(uint32_t))) {
+            logger_.error("Failed to write cluster map data");
             return false;
         }
-        offset += sizeof(chunk_size);
-        
-        if (!writeAligned(serialized.data(), serialized.size(), offset)) {
-            return false;
-        }
-        offset += serialized.size();
     }
-    
-    logger_.debug("Wrote cluster map: " + std::to_string(num_clusters) + " clusters");
+
+    logger_.debug("Wrote cluster map: " + std::to_string(data_size) + " bytes");
     return true;
 }
 
@@ -829,46 +821,40 @@ bool VectorClusterStore::readClusterMap() {
     if (fd_ < 0) {
         return false;
     }
-    
-    // Read number of clusters
-    uint32_t num_clusters;
-    if (!readAligned(&num_clusters, sizeof(num_clusters), cluster_map_offset_)) {
+
+    // Read size of serialized data
+    uint32_t data_size;
+    if (!readAligned(&data_size, sizeof(data_size), cluster_map_offset_)) {
+        logger_.error("Failed to read cluster map size");
         return false;
     }
-    
-    // Read each cluster
-    uint64_t offset = cluster_map_offset_ + sizeof(uint32_t);
-    std::vector<ClusterInfo> clusters;
-    
-    for (uint32_t i = 0; i < num_clusters; i++) {
-        // Read size
-        uint32_t chunk_size;
-        if (!readAligned(&chunk_size, sizeof(chunk_size), offset)) {
-            return false;
-        }
-        offset += sizeof(chunk_size);
-        
-        // Read data
-        std::vector<uint8_t> serialized(chunk_size);
-        if (!readAligned(serialized.data(), chunk_size, offset)) {
-            return false;
-        }
-        offset += chunk_size;
-        
-        // Deserialize
-        ClusterInfo cluster = ClusterInfo::deserialize(serialized);
-        clusters.push_back(cluster);
+
+    // If no data, nothing to restore (new store)
+    if (data_size == 0) {
+        logger_.debug("Read cluster map: empty (new store)");
+        return true;
     }
-    
-    // Update clustering model
-    for (const auto& cluster : clusters) {
-	(void)cluster;
-        // Set cluster location in model
-        // (This is simplified - in a real implementation, we would update the model properly)
-        // clustering_->setClusterInfo(cluster);
+
+    // Sanity check size
+    if (data_size > (vector_map_offset_ - cluster_map_offset_ - sizeof(uint32_t))) {
+        logger_.error("Cluster map size invalid: " + std::to_string(data_size));
+        return false;
     }
-    
-    logger_.debug("Read cluster map: " + std::to_string(num_clusters) + " clusters");
+
+    // Read serialized clustering model
+    std::vector<uint8_t> serialized(data_size);
+    if (!readAligned(serialized.data(), data_size, cluster_map_offset_ + sizeof(uint32_t))) {
+        logger_.error("Failed to read cluster map data");
+        return false;
+    }
+
+    // Deserialize and restore the clustering model state
+    if (!clustering_->deserialize(serialized)) {
+        logger_.error("Failed to deserialize clustering model");
+        return false;
+    }
+
+    logger_.debug("Read cluster map: " + std::to_string(data_size) + " bytes restored");
     return true;
 }
 bool VectorClusterStore::writeVectorMap() {

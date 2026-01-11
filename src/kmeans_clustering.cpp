@@ -246,10 +246,13 @@ std::vector<uint8_t> KMeansClusteringStrategy::serialize() {
         result.resize(pos + sizeof(uint32_t));
         memcpy(result.data() + pos, &cluster_id, sizeof(uint32_t));
         pos += sizeof(uint32_t);
-        
-        // Add ClusterInfo
+
+        // Add ClusterInfo with size prefix
         const auto& serialized = info.serialize();
-        result.resize(pos + serialized.size());
+        uint32_t info_size = static_cast<uint32_t>(serialized.size());
+        result.resize(pos + sizeof(uint32_t) + serialized.size());
+        memcpy(result.data() + pos, &info_size, sizeof(uint32_t));
+        pos += sizeof(uint32_t);
         memcpy(result.data() + pos, serialized.data(), serialized.size());
         pos += serialized.size();
     }
@@ -322,16 +325,21 @@ bool KMeansClusteringStrategy::deserialize(const std::vector<uint8_t>& data) {
         uint32_t cluster_id;
         memcpy(&cluster_id, data.data() + pos, sizeof(uint32_t));
         pos += sizeof(uint32_t);
-        
-        // Extract serialized ClusterInfo
-        std::vector<uint8_t> serialized_info(data.begin() + pos, data.end());
+
+        // Extract ClusterInfo size
+        uint32_t info_size;
+        memcpy(&info_size, data.data() + pos, sizeof(uint32_t));
+        pos += sizeof(uint32_t);
+
+        // Extract serialized ClusterInfo using exact size
+        std::vector<uint8_t> serialized_info(data.begin() + pos, data.begin() + pos + info_size);
         ClusterInfo info = ClusterInfo::deserialize(serialized_info);
-        
+
         // Store cluster info
         cluster_info_[cluster_id] = info;
-        
-        // Skip to next cluster
-        pos += serialized_info.size();
+
+        // Advance by exact size
+        pos += info_size;
     }
     
     // Update centroids
