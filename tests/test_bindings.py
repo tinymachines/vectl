@@ -24,7 +24,7 @@ class TestImports:
         """Test that version is defined."""
         import vector_store
         assert hasattr(vector_store, '__version__')
-        assert vector_store.__version__ == '0.3.0'
+        assert vector_store.__version__ == '0.3.1'
 
 
 class TestBasicObjects:
