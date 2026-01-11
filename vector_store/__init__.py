@@ -1,7 +1,7 @@
 # Vector Store Python Package
 from vector_cluster_store_py import VectorClusterStore, Logger
 
-__version__ = '0.3.1'
+__version__ = '0.3.2'
 
 # Convenience functions
 def create_store(device_path, vector_dim=768, num_clusters=10, log_file="vector_store.log"):

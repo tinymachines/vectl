@@ -303,9 +303,11 @@ class TestClusterPersistence:
             assert 0 in ids_after, "Query vector should be found after reopen"
 
             # Verify we're getting reasonable results (vectors exist and have similarity scores)
+            # Note: cosine similarity ranges from -1 to 1, with small floating-point tolerance
+            eps = 1e-5
             for vid, score in results_after:
                 assert 0 <= vid < num_vectors, f"Result ID {vid} should be valid"
-                assert score >= 0, f"Similarity score should be non-negative"
+                assert -1 - eps <= score <= 1 + eps, f"Similarity score {score} should be in [-1, 1]"
 
             del store2
             del logger2
