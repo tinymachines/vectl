@@ -33,6 +33,12 @@ private:
     uint32_t vector_dim_;
     uint32_t max_clusters_;
     bool initialized_;
+    // Count of clusters that have been seeded with a real centroid
+    // (Forgy initialization). Until a cluster is seeded its centroid is
+    // a meaningless zero vector and must be excluded from nearest-centroid
+    // search — otherwise every vector lands in whichever zero-centroid
+    // the hash map happens to iterate first.
+    uint32_t seeded_centroids_ = 0;
     
     // Cluster data
     std::unordered_map<uint32_t, Vector> centroids_;

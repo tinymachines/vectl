@@ -23,14 +23,15 @@ KMeansClusteringStrategy::KMeansClusteringStrategy(Logger& logger)
 bool KMeansClusteringStrategy::initialize(uint32_t vector_dim, uint32_t max_clusters) {
     vector_dim_ = vector_dim;
     max_clusters_ = max_clusters;
-    
+
     // Clear any existing data
     centroids_.clear();
     cluster_members_.clear();
     vector_to_cluster_.clear();
     vectors_.clear();
     cluster_info_.clear();
-    
+    seeded_centroids_ = 0;  // no real centroids yet — Forgy-seed on first adds
+
     // Will initialize centroids once we have some vectors
     initialized_ = true;
     
@@ -62,27 +63,37 @@ uint32_t KMeansClusteringStrategy::assignToCluster(const Vector& vector) {
 }
 
 bool KMeansClusteringStrategy::addVector(const Vector& vector, uint32_t vector_id) {
-    if (!initialized_) {
-        // If not initialized, initialize with random centroids
-        initializeCentroids();
-    }
-    
     // Store vector
     vectors_[vector_id] = vector;
-    
-    // Assign to cluster
-    uint32_t cluster_id = findClosestCentroid(vector);
-    
+
+    uint32_t cluster_id;
+    if (seeded_centroids_ < max_clusters_) {
+        // Forgy initialization: the first max_clusters_ vectors each
+        // *found* a cluster, becoming its initial centroid. This is what
+        // makes nearest-centroid assignment meaningful — without it every
+        // centroid is a zero vector and findClosestCentroid degenerates
+        // to "always the same cluster".
+        cluster_id = seeded_centroids_;
+        centroids_[cluster_id] = vector;
+        if (cluster_info_.find(cluster_id) != cluster_info_.end()) {
+            cluster_info_[cluster_id].centroid = vector;
+        }
+        seeded_centroids_++;
+    } else {
+        // All clusters seeded — assign to the nearest existing centroid.
+        cluster_id = findClosestCentroid(vector);
+    }
+
     // Update mappings
     vector_to_cluster_[vector_id] = cluster_id;
     cluster_members_[cluster_id].insert(vector_id);
-    
+
     // Update cluster info
     cluster_info_[cluster_id].vector_count++;
-    
-    // Update centroid
+
+    // Update centroid (recompute mean of members)
     updateCentroid(cluster_id);
-    
+
     return true;
 }
 
@@ -346,7 +357,17 @@ bool KMeansClusteringStrategy::deserialize(const std::vector<uint8_t>& data) {
     for (const auto& [cluster_id, _] : cluster_info_) {
         updateCentroid(cluster_id);
     }
-    
+
+    // Restore the seeded count = number of clusters that actually have
+    // members. New vectors added after a load continue Forgy seeding from
+    // here if the store isn't yet full, otherwise assign to nearest.
+    seeded_centroids_ = 0;
+    for (const auto& [cluster_id, members] : cluster_members_) {
+        if (!members.empty()) {
+            seeded_centroids_++;
+        }
+    }
+
     initialized_ = true;
     return true;
 }
@@ -391,15 +412,24 @@ float KMeansClusteringStrategy::calculateDistance(const Vector& v1, const Vector
 uint32_t KMeansClusteringStrategy::findClosestCentroid(const Vector& vector) {
     uint32_t closest_id = 0;
     float min_distance = std::numeric_limits<float>::max();
-    
+    bool found = false;
+
     for (const auto& [cluster_id, centroid] : centroids_) {
+        // Only consider seeded clusters — those with at least one member.
+        // An empty cluster's centroid is a zero/random vector and would
+        // otherwise corrupt nearest-centroid assignment.
+        auto mit = cluster_members_.find(cluster_id);
+        if (mit == cluster_members_.end() || mit->second.empty()) {
+            continue;
+        }
         float distance = calculateDistance(vector, centroid);
-        if (distance < min_distance) {
+        if (!found || distance < min_distance) {
             min_distance = distance;
             closest_id = cluster_id;
+            found = true;
         }
     }
-    
+
     return closest_id;
 }
 

@@ -64,6 +64,12 @@ private:
     // Vector metadata
     uint32_t vector_dim_;
     uint32_t next_vector_id_;
+    // High-water mark for vector-data allocation. Was a function-static in
+    // allocateVectorSpace, which (a) leaked across multiple store
+    // instances in one process and (b) reset to data_offset_ on reopen,
+    // overwriting existing vectors. Now per-instance + recomputed from the
+    // loaded vector map so reopened stores append after existing data.
+    uint64_t next_alloc_offset_;
     
     // Layout information
     uint64_t header_offset_;      // Store header

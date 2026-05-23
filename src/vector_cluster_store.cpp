@@ -9,15 +9,16 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <unordered_set>
 
 // Assuming Logger class is defined in a separate header
 // extern class Logger;
 
 VectorClusterStore::VectorClusterStore(Logger& logger)
     : fd_(-1), device_size_(0), block_size_(0), is_direct_io_(false),
-      vector_dim_(0), next_vector_id_(0), header_offset_(0),
-      cluster_map_offset_(0), vector_map_offset_(0), data_offset_(0),
-      logger_(logger) {
+      vector_dim_(0), next_vector_id_(0), next_alloc_offset_(0),
+      header_offset_(0), cluster_map_offset_(0), vector_map_offset_(0),
+      data_offset_(0), logger_(logger) {
 }
 
 VectorClusterStore::~VectorClusterStore() {
@@ -58,22 +59,30 @@ bool VectorClusterStore::initialize(const std::string& device_path,
     // Increase to 50MB for cluster map (5x more space than before)
     vector_map_offset_ = cluster_map_offset_ + (50 * 1024 * 1024);
     data_offset_ = vector_map_offset_ + (10 * 1024 * 1024);  // Still 10MB for vector map
-    
-    // Define layout
-    //header_offset_ = 0;  // Store header at the beginning
-    //cluster_map_offset_ = 512;  // After header
-    //vector_map_offset_ = cluster_map_offset_ + (max_clusters * 512);  // After cluster map
-    //data_offset_ = vector_map_offset_ + (1024 * 1024);  // Leave 1MB for vector map
-    
+
+    // Allocation high-water mark starts at the data region; bumped past
+    // existing vectors below if this is an existing store.
+    next_alloc_offset_ = data_offset_;
+
     // Check if the device has a valid header
     if (readHeader()) {
         logger_.info("Found existing vector store, loading data");
-        
+
         // Read cluster map and vector map
         if (!readClusterMap() || !readVectorMap()) {
             logger_.error("Failed to read store metadata");
             closeDevice();
             return false;
+        }
+
+        // Bump the allocation high-water mark past every vector already on
+        // disk so new stores append rather than overwrite.
+        size_t vector_size = vector_dim_ * sizeof(float);
+        for (const auto& [vid, entry] : vector_map_) {
+            uint64_t end = entry.offset + vector_size;
+            if (end > next_alloc_offset_) {
+                next_alloc_offset_ = end;
+            }
         }
     } else {
         logger_.info("Initializing new vector store");
@@ -391,33 +400,50 @@ std::vector<std::pair<uint32_t, float>> VectorClusterStore::findSimilarVectors(
         return {};
     }
     
-    // Find closest clusters
-    std::vector<uint32_t> candidate_clusters = clustering_->findClosestClusters(query, 3);
-    
-    // Process vectors from those clusters
-    std::vector<std::pair<uint32_t, float>> candidates;
-    std::vector<uint32_t> processed_vectors;
-    
-    for (uint32_t cluster_id : candidate_clusters) {
-        logger_.debug("Searching in cluster " + std::to_string(cluster_id));
-        
-        // Find vectors in this cluster
-        for (const auto& [vector_id, entry] : vector_map_) {
-            if (entry.cluster_id == cluster_id) {
-                // Get vector data
-                Vector vector(vector_dim_);
-                if (readVector(entry.offset, vector)) {
-                    // Calculate similarity
-                    float similarity = calculateCosineSimilarity(query, vector);
-                    candidates.push_back({vector_id, similarity});
-                    processed_vectors.push_back(vector_id);
-                }
-            }
+    // Walk clusters nearest-centroid-first and accumulate a scan set
+    // until we've covered a generous budget of candidate vectors. The
+    // old code hardcoded the 3 nearest clusters, which gave terrible
+    // recall once Forgy seeding spread vectors across many small clusters
+    // (e.g. ~1 vector/cluster on a 140-doc / 100-cluster store → only ~3
+    // of 140 vectors ever examined).
+    //
+    // Budget: at least k*20 vectors (min 200). On small/medium stores
+    // this examines essentially everything (correct, and still fast at
+    // these sizes); on huge stores it prunes the long tail of distant
+    // clusters.
+    const size_t scan_budget = std::max<size_t>(static_cast<size_t>(k) * 20, 200);
+
+    std::vector<uint32_t> ordered_clusters =
+        clustering_->findClosestClusters(query, UINT32_MAX);
+
+    std::unordered_set<uint32_t> scan_set;
+    size_t estimated = 0;
+    for (uint32_t cluster_id : ordered_clusters) {
+        scan_set.insert(cluster_id);
+        estimated += clustering_->getClusterSize(cluster_id);
+        if (estimated >= scan_budget) {
+            break;
         }
     }
-    
-    logger_.info("Processed " + std::to_string(processed_vectors.size()) + 
-                " vectors from " + std::to_string(candidate_clusters.size()) + " clusters");
+
+    // Single pass over the vector map — scan vectors whose cluster is in
+    // the candidate set. O(N) rather than O(clusters × N).
+    std::vector<std::pair<uint32_t, float>> candidates;
+    size_t processed = 0;
+    for (const auto& [vector_id, entry] : vector_map_) {
+        if (scan_set.find(entry.cluster_id) == scan_set.end()) {
+            continue;
+        }
+        Vector vector(vector_dim_);
+        if (readVector(entry.offset, vector)) {
+            float similarity = calculateCosineSimilarity(query, vector);
+            candidates.push_back({vector_id, similarity});
+            processed++;
+        }
+    }
+
+    logger_.info("Processed " + std::to_string(processed) +
+                " vectors from " + std::to_string(scan_set.size()) + " clusters");
     
     // Sort by similarity (highest first)
     std::sort(candidates.begin(), candidates.end(), 
@@ -597,28 +623,47 @@ bool VectorClusterStore::loadIndex(const std::string& filename) {
     uint32_t num_vectors;
     file.read(reinterpret_cast<char*>(&num_vectors), sizeof(uint32_t));
     
-    // Read vector entries
+    // Read vector entries. The on-disk layout (written by saveIndex)
+    // is three fields per entry — vector_id, cluster_id, offset —
+    // followed by a length-prefixed metadata blob. A prior version of
+    // this loop incorrectly read FOUR fields (an extra entry.vector_id
+    // that saveIndex never writes), desyncing the stream by 4 bytes
+    // after each entry and causing the "Loaded 2 vectors" / huge
+    // metadata_size corruption observed on reload.
+    const uint32_t MAX_METADATA_SIZE = 10240; // 10KB — matches writeVectorMap
     for (uint32_t i = 0; i < num_vectors; i++) {
         uint32_t vector_id;
         VectorEntry entry;
-        
+
         file.read(reinterpret_cast<char*>(&vector_id), sizeof(uint32_t));
-        file.read(reinterpret_cast<char*>(&entry.vector_id), sizeof(uint32_t));
-	file.read(reinterpret_cast<char*>(&entry.cluster_id), sizeof(uint32_t));
+        file.read(reinterpret_cast<char*>(&entry.cluster_id), sizeof(uint32_t));
         file.read(reinterpret_cast<char*>(&entry.offset), sizeof(uint64_t));
-        
+
         // Read metadata string
         uint32_t metadata_size;
         file.read(reinterpret_cast<char*>(&metadata_size), sizeof(uint32_t));
-        
+
+        // Bound metadata_size before allocating to keep a corrupt file
+        // from triggering a multi-GB allocation. If we see something
+        // out of bounds, the stream is desynced — fail the load loudly
+        // rather than silently storing junk.
+        if (metadata_size > MAX_METADATA_SIZE) {
+            logger_.error("loadIndex: metadata_size " + std::to_string(metadata_size) +
+                         " for vector " + std::to_string(vector_id) +
+                         " exceeds MAX_METADATA_SIZE — checkpoint is corrupt or "
+                         "format version mismatch; aborting load");
+            return false;
+        }
+
+        entry.vector_id = vector_id;
         if (metadata_size > 0) {
             std::vector<char> metadata_buffer(metadata_size);
             file.read(metadata_buffer.data(), metadata_size);
             entry.metadata.assign(metadata_buffer.data(), metadata_size);
         }
-        
+
         vector_map_[vector_id] = entry;
-        
+
         // Update next_vector_id if needed
         if (vector_id >= next_vector_id_) {
             next_vector_id_ = vector_id + 1;
@@ -631,7 +676,17 @@ bool VectorClusterStore::loadIndex(const std::string& filename) {
     if (success) {
         logger_.info("Index loaded from " + filename);
         logger_.info("Loaded " + std::to_string(vector_map_.size()) + " vectors");
-        
+
+        // Bump the allocation high-water mark past loaded vectors so any
+        // subsequent stores append rather than overwrite existing data.
+        size_t vector_size = vector_dim_ * sizeof(float);
+        for (const auto& [vid, entry] : vector_map_) {
+            uint64_t end = entry.offset + vector_size;
+            if (end > next_alloc_offset_) {
+                next_alloc_offset_ = end;
+            }
+        }
+
         // Update device metadata
         if (!writeHeader() || !writeVectorMap() || !writeClusterMap()) {
             logger_.error("Failed to update device metadata after loading index");
@@ -1066,21 +1121,24 @@ bool VectorClusterStore::readVectorMap() {
 }
 
 uint64_t VectorClusterStore::allocateVectorSpace(uint32_t cluster_id) {
-    // Simplified implementation - in a real system, we would have a more sophisticated 
-    // allocation strategy that groups vectors by cluster physically on the device
-    
-    // Calculate space needed for this vector
+    // Append to the end of the data region. next_alloc_offset_ is a
+    // per-instance high-water mark (NOT a function-static — that old bug
+    // shared the offset across stores and reset it on reopen, clobbering
+    // existing vectors).
     size_t vector_size = vector_dim_ * sizeof(float);
-    
-    // For now, just append to the end of the data region
-    static uint64_t next_offset = data_offset_;
-    
-    // Ensure alignment
-    uint64_t aligned_offset = ((next_offset + block_size_ - 1) / block_size_) * block_size_;
-    
-    // Update next offset
-    next_offset = aligned_offset + vector_size;
-    
+
+    // Lazily initialize from data_offset_ on first use of a fresh store.
+    if (next_alloc_offset_ < data_offset_) {
+        next_alloc_offset_ = data_offset_;
+    }
+
+    // Ensure block alignment
+    uint64_t aligned_offset =
+        ((next_alloc_offset_ + block_size_ - 1) / block_size_) * block_size_;
+
+    // Advance the high-water mark past this vector
+    next_alloc_offset_ = aligned_offset + vector_size;
+
     return aligned_offset;
 }
 
