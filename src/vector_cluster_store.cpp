@@ -386,14 +386,20 @@ std::string VectorClusterStore::getVectorMetadata(uint32_t vector_id) {
 
 std::vector<std::pair<uint32_t, float>> VectorClusterStore::findSimilarVectors(
     const Vector& query, uint32_t k) {
-    
+
     std::lock_guard<std::mutex> lock(store_mutex_);
-    
-    if (fd_ < 0) {
-        logger_.error("Device not open");
+
+    // A loaded store must stay searchable. Under a long-lived host (the
+    // cbintel uvicorn service) the device fd can end up closed between the
+    // initial load and a later query — the in-memory maps are intact but
+    // findSimilarVectors reads vector data back from the device. Reopen on
+    // demand instead of failing. (A fresh short-lived process never tripped
+    // this; the service did 100% — see #147.)
+    if (fd_ < 0 && !openDevice()) {
+        logger_.error("Device not open and reopen failed");
         return {};
     }
-    
+
     if (query.size() != vector_dim_) {
         logger_.error("Query vector dimension mismatch: got " + std::to_string(query.size()) + 
                     ", expected " + std::to_string(vector_dim_));
