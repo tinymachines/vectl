@@ -441,18 +441,37 @@ void KMeansClusteringStrategy::updateCentroid(uint32_t cluster_id) {
         return;
     }
     
-    // Calculate average of all vectors in cluster
+    // Calculate average of all vectors in cluster.
+    //
+    // MUST use find(), not vectors_[id]: operator[] default-constructs an
+    // EMPTY Vector for any member id missing from vectors_, and the inner
+    // loop then reads new_centroid[i] += vector[i] for i in [0,vector_dim_)
+    // out of a zero-length buffer — a 768-float out-of-bounds read. With a
+    // quiescent heap that OOB read hits mapped garbage and "works"; under
+    // heap churn (e.g. an await on the embed server between adds, which lets
+    // aiohttp/GC reuse the freed region) it lands on unmapped memory and
+    // segfaults (GPF in libstdc++). Skip missing/malformed members and
+    // average only over what we actually summed. (cbintel issue #147)
     Vector new_centroid(vector_dim_, 0.0f);
-    
+
+    size_t counted = 0;
     for (uint32_t vector_id : members) {
-        const auto& vector = vectors_[vector_id];
+        auto it = vectors_.find(vector_id);
+        if (it == vectors_.end() || it->second.size() != vector_dim_) {
+            continue;  // never read past the end of a short/absent vector
+        }
+        const Vector& vector = it->second;
         for (size_t i = 0; i < vector_dim_; i++) {
             new_centroid[i] += vector[i];
         }
+        ++counted;
     }
-    
+
+    if (counted == 0) {
+        return;  // nothing valid to average; leave centroid as-is
+    }
     for (size_t i = 0; i < vector_dim_; i++) {
-        new_centroid[i] /= members.size();
+        new_centroid[i] /= static_cast<float>(counted);
     }
     
     // Update centroid
