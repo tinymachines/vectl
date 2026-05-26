@@ -13,7 +13,15 @@ PYBIND11_MODULE(vector_cluster_store_py, m) {
         .def(py::init<const std::string&>());
     
     py::class_<VectorClusterStore>(m, "VectorClusterStore")
-        .def(py::init<Logger&>())
+        // keep_alive<1,2>: tie the Logger's lifetime to the store. The store
+        // holds the Logger by reference (Logger& logger_) and uses it for the
+        // life of the store (every storeVector -> logger_.debug()). Without
+        // this, a caller that lets the Logger go out of scope (e.g. the
+        // standalone vector_store.create_store, used by cbos) leaves the store
+        // with a dangling Logger& -> use-after-free, which SEGVs once heap
+        // churn reuses the freed block. Fixes it for ALL consumers at the
+        // binding layer. (Nominate-AI/cbintel #147)
+        .def(py::init<Logger&>(), py::keep_alive<1, 2>())
         .def("initialize", &VectorClusterStore::initialize)
         .def("store_vector", [](VectorClusterStore& self, uint32_t id, const std::vector<float>& vec, const std::string& metadata = "") {
             std::cout << "Python binding: store_vector called with id=" << id 
